@@ -7,6 +7,8 @@ Created on Thu Aug 23 16:39:13 2018
 
 import pandas as pd
 import lightgbm as lgb
+import xlearn as xl
+
 from sklearn.linear_model import LogisticRegression 
 from sklearn.preprocessing import StandardScaler     #对于数值特征
 from sklearn.preprocessing import OneHotEncoder     #对于id类特征
@@ -17,6 +19,9 @@ from sklearn.externals import joblib
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.metrics.ranking import roc_auc_score
 from scipy.sparse.construct import hstack
+
+
+
 
 class solution():
     def __init__(self,evalortest = 'eval'):
@@ -109,6 +114,8 @@ class solution():
             
             return feature
     
+    
+    ####   LIGHTGBM
     def lgbmparam(self):
         param = {  
             'boosting_type': 'gbdt',  
@@ -130,7 +137,7 @@ class solution():
         return param
     def LGBMtrain(self,feature,target):
         Train_data = lgb.Dataset(feature.values,label = target.values)
-        param =  {'learning_rate':0.01,'subsample':0.35,'num_leaves':31, 'num_trees':1000, 'objective':'binary','metric':'auc'}
+        #param =  {'learning_rate':0.01,'subsample':0.35,'num_leaves':31, 'num_trees':1000, 'objective':'binary','metric':'auc'}
         num_round = 3000
         progress = dict()
         params = self.lgbmparam()
@@ -146,8 +153,8 @@ class solution():
         sub['Coupon_id']= feature['Coupon_id']
         sub['Date_received'] = feature['Date_received']
         sub['Probability'] = preds
-        sub.to_csv("./data/submit.csv", sep = ",", index = False, line_terminator = '\r')
-        return preds
+        sub.to_csv("./result/submit_lgbm.csv", sep = ",", index = False, line_terminator = '\r')
+        
      
     def LGBMeval(self,feature,target):
         feature_train = feature.iloc[0:self.lenth_eval,:]
@@ -161,10 +168,32 @@ class solution():
         param = self.lgbmparam()
         num_round = 3000
         lgb.train(param, Train_data, num_round,valid_sets = Test_data,early_stopping_rounds=500)
-        #auc(bst,feature_eval.values,label_eval.values)
-        #lossList = process['valid_0']['auc']
-        #return lossList
+
         
+    
+    
+    ### FFM
+    def FFMtrain(self):
+        ffm_model = xl.create_ffm()
+        param = {'task':'binary','lr':0.02,'lambda':0.002,'metric':'auc'}
+        ffm_model.setTrain("./data/train_ffm.csv")   
+        ffm_model.fit(param,"./data/model.out")
+        #ffm_model.setTest("./data/test_ffm.csv")
+        #ffm_model.setSigmoid()
+        #ffm_model.predict("./data/model.out","./data/output.txt")
+    def FFMtest(self):
+        ffm_model = xl.create_ffm()
+        param = {'task':'binary','lr':0.02,'lambda':0.002,'metric':'auc'}
+        ffm_model.setTest("./data/test_ffm.csv")
+        ffm_model.setSigmoid()
+        ffm_model.predict("./data/model.out","./data/output.txt")       
+    
+    #def FFMeval(self):
+        
+
+    
+        
+    ##### LR    
     def LRtrain(self,feature,target):
         lr = LogisticRegression()  
         lr.fit(feature.values,target.values)
@@ -179,7 +208,7 @@ class solution():
         sub['Coupon_id']= feature['Coupon_id']
         sub['Date_received'] = feature['Date_received']
         sub['Probability'] = preds
-        sub.to_csv("./data/submit_lr.csv", sep = ",", index = False, line_terminator = '\r')
+        sub.to_csv("./result/submit_lr.csv", sep = ",", index = False, line_terminator = '\r')
        
     def LReval(self,feature,target):
         feature_train = feature.iloc[0:self.lenth_eval,:]
@@ -191,21 +220,12 @@ class solution():
         lr.fit(feature_train.values,label_train.values)
         #lr.fit(grd_enc.transform(grd.apply(feature_train)[:, :, 0]), label_train)  
         proba_test = lr.predict_proba(feature_eval.values)[:,1]
-        
-        print(proba_test)
-        #print(label_eval.values)
-        #proba_test = np.array(proba_test)
-        #print(proba_test)
-        #print(proba_test.shape)
-        #label_eval.values = np.array(label_eval.values)
-        #fpr, tpr, thresholds = metrics.roc_curve(label_eval.values, proba_test, pos_label=2)
-        #test_auc = metrics.roc_auc_score(fpr,tpr)
-        
         au = metrics.auc(label_eval.values, proba_test,reorder=True)
         print(au)
         
-        #print(test_auc)
-        #print('auc:',au)
+        
+        
+
     def GBDTparam(self):    
         params = {
         'task': 'train',
@@ -222,7 +242,9 @@ class solution():
         }
         return params
     
-    def GBDTLReval(self,feature,target):
+    
+    ##### GBDT
+    def GBDTeval(self,feature,target):
         feature_train = feature.iloc[0:self.lenth_eval,:]
         feature_eval = feature.iloc[self.lenth_eval:,:]
         label_train = target.iloc[0:self.lenth_eval]
@@ -234,6 +256,35 @@ class solution():
         gbdt_auc = roc_auc_score(label_eval.values, y_pred_gbdt)
         print('gbdt auc: %.5f' % gbdt_auc)
         
+    def GBDTtrain(self,feature,target):
+        GBDT = GradientBoostingClassifier(n_estimators=10)
+        GBDT.fit(feature.values, target.values)
+        joblib.dump(GBDT, "model_gbdt")
+        
+    def GBDTtest(self,feature):
+        clf = joblib.load("model_gbdt")
+        preds = clf.predict_proba(feature.values)[:,1]
+        sub = pd.DataFrame()
+        sub['User_id'] = feature['User_id']
+        sub['Coupon_id']= feature['Coupon_id']
+        sub['Date_received'] = feature['Date_received']
+        sub['Probability'] = preds
+        sub.to_csv("./result/submit_gbdt.csv", sep = ",", index = False, line_terminator = '\r')        
+        
+        
+    #### GBDT+LR    
+    def GBDT_LReval(self,feature,target):
+        feature_train = feature.iloc[0:self.lenth_eval,:]
+        feature_eval = feature.iloc[self.lenth_eval:,:]
+        label_train = target.iloc[0:self.lenth_eval]
+        label_eval = target.iloc[self.lenth_eval:]
+        GBDT = GradientBoostingClassifier(n_estimators=10)
+        GBDT.fit(feature_train.values, label_train.values)
+        
+        y_pred_gbdt = GBDT.predict_proba(feature_eval.values)[:, 1]
+        gbdt_auc = roc_auc_score(label_eval.values, y_pred_gbdt)
+        print('gbdt auc: %.5f' % gbdt_auc)
+
         X_train_leaves = GBDT.apply(feature_train)[:,:,0]
         X_test_leaves = GBDT.apply(feature_eval)[:,:,0]
         
@@ -326,7 +377,8 @@ def train():
     data = model.base_feature(data)
     data,target = model.feature_filter(data)
     #model.LGBMtrain(data,target)
-    model.LRtrain(data,target)
+    #model.LRtrain(data,target)
+    model.GBDTtrain(data,target)
     
 def test():
     model = solution('test')
@@ -334,29 +386,30 @@ def test():
     
     data = model.base_feature(data)
     data = model.feature_filter(data)
-    #print(data)
-    #preds = model.LGBMtest(data)  
-    model.LRtest(data)
+    #model.LGBMtest(data)  
+    #model.LRtest(data)
+    model.GBDTtest(data)
     
 def modeleval():
     model = solution('eval')
     data = model.read_data()
-    #print(data)
+    
     data = model.base_feature(data)
     #print(data)
     #data_train,data_eval = model.processdata(data)
     data,target = model.feature_filter(data)
-    model.LGBMeval(data,target)
+    #model.LGBMeval(data,target)
     #model.LReval(data,target)    
     #model.GBDTeval(data,target)
-    #model.GBDTLReval(data,target)   
+    model.GBDT_LReval(data,target)   
         
         
 if __name__ == "__main__":
-    train()
-    test()
-    #modeleval()
-    
+    #train()
+    #test()
+    modeleval()
+    #model = solution('eval')
+    #model.FFMtrain()
     
     
     
